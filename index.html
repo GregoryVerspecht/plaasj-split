@@ -4,10 +4,6 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Plaasj Split — Wie at wat?</title>
-<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <style>
   * { box-sizing: border-box; }
   body { margin: 0; background: #2A2620; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
@@ -26,18 +22,24 @@
   }
   .chip { transition: transform 0.12s ease; }
   .chip:active { transform: scale(0.93); }
+  #status { color: #F7F5F0; text-align: center; padding: 40px 16px; font-family: -apple-system, sans-serif; }
 </style>
 </head>
 <body>
-<div id="root"></div>
+<div id="root"><div id="status">Bezig met laden…</div></div>
 
-<script type="text/babel" data-presets="react">
-const { useState, useEffect, useMemo, useRef } = React;
+<script type="module">
+import React from "https://esm.sh/react@18";
+import { createRoot } from "https://esm.sh/react-dom@18/client";
+import htm from "https://esm.sh/htm@3.1.1";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-// ---- Supabase config ----
+const html = htm.bind(React.createElement);
+const { useState, useEffect, useMemo } = React;
+
 const SUPABASE_URL = "https://ooexcpkyhoqylmiqfuau.supabase.co";
 const SUPABASE_KEY = "sb_publishable_nEfN9HGFGqFPJbYSLg3S4w_WtrEyijr";
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 const PEOPLE = ["Greg", "Nikita", "Laura", "Mirthe", "Liesa", "Lissa", "Hind", "Bjarne", "Eline"];
 const CODES = { Greg: "GRE", Nikita: "NIK", Laura: "LAU", Mirthe: "MIR", Liesa: "LIE", Lissa: "LIS", Hind: "HIN", Bjarne: "BJA", Eline: "ELI" };
@@ -74,7 +76,7 @@ const UNITS = (() => {
   const arr = [];
   ITEMS.forEach((item, i) => {
     for (let u = 0; u < item.qty; u++) {
-      arr.push({ id: `${i}-${u}`, itemIndex: i, name: item.name, price: item.price, portion: u + 1, totalPortions: item.qty });
+      arr.push({ id: `${i}-${u}`, itemIndex: i, name: item.name, price: item.price, portion: u + 1 });
     }
   });
   return arr;
@@ -83,21 +85,22 @@ const UNITS = (() => {
 function App() {
   const [selections, setSelections] = useState({});
   const [activePerson, setActivePerson] = useState(() => localStorage.getItem("plaasj-active") || null);
-  const [loaded, setLoaded] = useState(false);
   const [savingState, setSavingState] = useState("idle");
   const [confirmReset, setConfirmReset] = useState(false);
+  const [loadError, setLoadError] = useState(null);
 
   useEffect(() => {
     let channel;
     (async () => {
-      const { data, error } = await supabase.from("selections").select("unit_id, people");
-      if (!error && data) {
+      try {
+        const { data, error } = await supabase.from("selections").select("unit_id, people");
+        if (error) throw error;
         const map = {};
-        data.forEach((row) => { map[row.unit_id] = row.people || []; });
+        (data || []).forEach((row) => { map[row.unit_id] = row.people || []; });
         setSelections(map);
+      } catch (e) {
+        setLoadError(String(e.message || e));
       }
-      setLoaded(true);
-
       channel = supabase
         .channel("selections-changes")
         .on("postgres_changes", { event: "*", schema: "public", table: "selections" }, (payload) => {
@@ -168,134 +171,139 @@ function App() {
   const sortedPeople = useMemo(() => [...PEOPLE].sort((a, b) => totals[b] - totals[a]), [totals]);
   const progressPct = Math.min(100, (assignedTotal / GRAND_TOTAL) * 100);
 
-  return (
-    <div style={{ minHeight: "100vh", paddingBottom: "40px" }}>
-      <div style={{ maxWidth: "480px", margin: "0 auto", padding: "24px 12px" }}>
-        <div className="zigzag-top" />
-        <div style={{ background: "#F7F5F0" }}>
-          <div style={{ padding: "20px 20px 16px", textAlign: "center", borderBottom: "1px dashed #C9C4B8" }}>
-            <div className="mono" style={{ fontSize: "11px", letterSpacing: "2px", color: "#8A8578", marginBottom: "6px" }}>BTW KASTICKET · TAFEL 508A</div>
-            <div style={{ fontSize: "24px", fontWeight: 800, letterSpacing: "-0.02em", color: "#21231F" }}>Wie at wat?</div>
-            <div className="mono" style={{ fontSize: "12px", color: "#8A8578", marginTop: "4px" }}>Plaasj Food &amp; Drink · 13.08.2026</div>
+  if (loadError) {
+    return html`<div id="status">Kon geen verbinding maken met de database.<br/><span class="mono" style=${{ fontSize: "12px", opacity: 0.7 }}>${loadError}</span></div>`;
+  }
+
+  return html`
+    <div style=${{ minHeight: "100vh", paddingBottom: "40px" }}>
+      <div style=${{ maxWidth: "480px", margin: "0 auto", padding: "24px 12px" }}>
+        <div class="zigzag-top"></div>
+        <div style=${{ background: "#F7F5F0" }}>
+          <div style=${{ padding: "20px 20px 16px", textAlign: "center", borderBottom: "1px dashed #C9C4B8" }}>
+            <div class="mono" style=${{ fontSize: "11px", letterSpacing: "2px", color: "#8A8578", marginBottom: "6px" }}>BTW KASTICKET · TAFEL 508A</div>
+            <div style=${{ fontSize: "24px", fontWeight: 800, letterSpacing: "-0.02em", color: "#21231F" }}>Wie at wat?</div>
+            <div class="mono" style=${{ fontSize: "12px", color: "#8A8578", marginTop: "4px" }}>Plaasj Food &amp; Drink · 13.08.2026</div>
           </div>
 
-          <div style={{ padding: "16px 16px 12px" }}>
-            <div className="mono" style={{ fontSize: "11px", color: "#8A8578", marginBottom: "8px", letterSpacing: "1px" }}>IK BEN</div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
-              {PEOPLE.map((p) => {
-                const isActive = activePerson === p;
-                return (
-                  <button key={p} onClick={() => chooseActive(p)} className="chip"
-                    style={{ padding: "6px 10px", borderRadius: "999px", border: `1.5px solid ${isActive ? COLORS[p] : "#DAD5C8"}`, background: isActive ? COLORS[p] : "#FFFFFF", color: isActive ? "#FFFFFF" : "#4A473E", fontSize: "12.5px", fontWeight: 600, cursor: "pointer" }}>
-                    {p}
-                  </button>
-                );
-              })}
+          <div style=${{ padding: "16px 16px 12px" }}>
+            <div class="mono" style=${{ fontSize: "11px", color: "#8A8578", marginBottom: "8px", letterSpacing: "1px" }}>IK BEN</div>
+            <div style=${{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+              ${PEOPLE.map((p) => html`
+                <button key=${p} onClick=${() => chooseActive(p)} class="chip"
+                  style=${{ padding: "6px 10px", borderRadius: "999px", border: `1.5px solid ${activePerson === p ? COLORS[p] : "#DAD5C8"}`, background: activePerson === p ? COLORS[p] : "#FFFFFF", color: activePerson === p ? "#FFFFFF" : "#4A473E", fontSize: "12.5px", fontWeight: 600, cursor: "pointer" }}>
+                  ${p}
+                </button>
+              `)}
             </div>
-            <p style={{ fontSize: "11.5px", color: "#8A8578", marginTop: "8px", lineHeight: 1.4 }}>
+            <p style=${{ fontSize: "11.5px", color: "#8A8578", marginTop: "8px", lineHeight: 1.4 }}>
               Kies je naam — je code licht dan overal op zodat je snel je items kan aantikken. Tik bij elk item de codes aan van iedereen die ervan at of dronk.
             </p>
           </div>
 
-          <div style={{ position: "sticky", top: 0, zIndex: 10, background: "#F7F5F0", padding: "8px 16px 12px", borderBottom: "1px dashed #C9C4B8" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "6px" }}>
-              <span className="mono" style={{ fontSize: "11px", color: "#8A8578" }}>TOEGEWEZEN</span>
-              <span className="mono" style={{ fontSize: "13px", fontWeight: 700, color: "#21231F" }}>{fmt(assignedTotal)} / {fmt(GRAND_TOTAL)}</span>
+          <div style=${{ position: "sticky", top: 0, zIndex: 10, background: "#F7F5F0", padding: "8px 16px 12px", borderBottom: "1px dashed #C9C4B8" }}>
+            <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "6px" }}>
+              <span class="mono" style=${{ fontSize: "11px", color: "#8A8578" }}>TOEGEWEZEN</span>
+              <span class="mono" style=${{ fontSize: "13px", fontWeight: 700, color: "#21231F" }}>${fmt(assignedTotal)} / ${fmt(GRAND_TOTAL)}</span>
             </div>
-            <div style={{ height: "6px", background: "#E4E0D3", borderRadius: "999px", overflow: "hidden" }}>
-              <div style={{ height: "100%", width: `${progressPct}%`, background: "#0F7A6B", transition: "width 0.25s ease" }} />
+            <div style=${{ height: "6px", background: "#E4E0D3", borderRadius: "999px", overflow: "hidden" }}>
+              <div style=${{ height: "100%", width: `${progressPct}%`, background: "#0F7A6B", transition: "width 0.25s ease" }}></div>
             </div>
           </div>
 
-          <div style={{ padding: "8px 16px 4px" }}>
-            {grouped.map(({ item, units }) => (
-              <div key={item.name} style={{ padding: "12px 0", borderBottom: "1px dashed #E4E0D3" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "8px" }}>
-                  <span style={{ fontWeight: 700, fontSize: "14.5px", color: "#21231F" }}>{item.qty > 1 ? `${item.qty}× ${item.name}` : item.name}</span>
-                  <span className="mono" style={{ fontSize: "12.5px", color: "#8A8578" }}>{fmt(item.price)}{item.qty > 1 ? " /stuk" : ""}</span>
+          <div style=${{ padding: "8px 16px 4px" }}>
+            ${grouped.map(({ item, units }) => html`
+              <div key=${item.name} style=${{ padding: "12px 0", borderBottom: "1px dashed #E4E0D3" }}>
+                <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "8px" }}>
+                  <span style=${{ fontWeight: 700, fontSize: "14.5px", color: "#21231F" }}>${item.qty > 1 ? `${item.qty}× ${item.name}` : item.name}</span>
+                  <span class="mono" style=${{ fontSize: "12.5px", color: "#8A8578" }}>${fmt(item.price)}${item.qty > 1 ? " /stuk" : ""}</span>
                 </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                  {units.map((u) => {
+                <div style=${{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                  ${units.map((u) => {
                     const sel = selections[u.id] || [];
                     const isShared = PEOPLE.every((p) => sel.includes(p));
-                    return (
-                      <div key={u.id} style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-                        {item.qty > 1 && <span className="mono" style={{ fontSize: "10.5px", color: "#B0AB9C", minWidth: "20px" }}>#{u.portion}</span>}
-                        <button onClick={() => toggleShared(u.id)} className="chip mono" title="Verdeel over iedereen"
-                          style={{ padding: "0 8px", height: "26px", borderRadius: "6px", fontSize: "9.5px", fontWeight: 700, letterSpacing: "0.5px", cursor: "pointer", border: `1.5px solid ${isShared ? "#0F7A6B" : "#DAD5C8"}`, background: isShared ? "#0F7A6B" : "#FFFFFF", color: isShared ? "#FFFFFF" : "#8A8578", whiteSpace: "nowrap" }}>
-                          {isShared ? "✓ ALLEN" : "ALLEN"}
+                    return html`
+                      <div key=${u.id} style=${{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                        ${item.qty > 1 ? html`<span class="mono" style=${{ fontSize: "10.5px", color: "#B0AB9C", minWidth: "20px" }}>#${u.portion}</span>` : null}
+                        <button onClick=${() => toggleShared(u.id)} class="chip mono" title="Verdeel over iedereen"
+                          style=${{ padding: "0 8px", height: "26px", borderRadius: "6px", fontSize: "9.5px", fontWeight: 700, letterSpacing: "0.5px", cursor: "pointer", border: `1.5px solid ${isShared ? "#0F7A6B" : "#DAD5C8"}`, background: isShared ? "#0F7A6B" : "#FFFFFF", color: isShared ? "#FFFFFF" : "#8A8578", whiteSpace: "nowrap" }}>
+                          ${isShared ? "✓ ALLEN" : "ALLEN"}
                         </button>
-                        <div style={{ display: "flex", flexWrap: "wrap", gap: "5px", flex: 1 }}>
-                          {PEOPLE.map((p) => {
+                        <div style=${{ display: "flex", flexWrap: "wrap", gap: "5px", flex: 1 }}>
+                          ${PEOPLE.map((p) => {
                             const isSel = sel.includes(p);
                             const isActive = activePerson === p;
-                            return (
-                              <button key={p} onClick={() => toggle(u.id, p)} className="chip mono" title={p}
-                                style={{ width: "34px", height: "26px", borderRadius: "6px", fontSize: "10px", fontWeight: 700, cursor: "pointer", border: isActive && !isSel ? `1.5px dashed ${COLORS[p]}` : "1.5px solid transparent", background: isSel ? COLORS[p] : "#FFFFFF", color: isSel ? "#FFFFFF" : "#8A8578", boxShadow: isSel ? "none" : "inset 0 0 0 1px #E4E0D3" }}>
-                                {CODES[p]}
+                            return html`
+                              <button key=${p} onClick=${() => toggle(u.id, p)} class="chip mono" title=${p}
+                                style=${{ width: "34px", height: "26px", borderRadius: "6px", fontSize: "10px", fontWeight: 700, cursor: "pointer", border: isActive && !isSel ? `1.5px dashed ${COLORS[p]}` : "1.5px solid transparent", background: isSel ? COLORS[p] : "#FFFFFF", color: isSel ? "#FFFFFF" : "#8A8578", boxShadow: isSel ? "none" : "inset 0 0 0 1px #E4E0D3" }}>
+                                ${CODES[p]}
                               </button>
-                            );
+                            `;
                           })}
                         </div>
-                        {sel.length > 0 && <span className="mono" style={{ fontSize: "10.5px", color: "#8A8578", whiteSpace: "nowrap" }}>{fmt(u.price / sel.length)} elk</span>}
+                        ${sel.length > 0 ? html`<span class="mono" style=${{ fontSize: "10.5px", color: "#8A8578", whiteSpace: "nowrap" }}>${fmt(u.price / sel.length)} elk</span>` : null}
                       </div>
-                    );
+                    `;
                   })}
                 </div>
               </div>
-            ))}
+            `)}
           </div>
 
-          <div style={{ padding: "16px" }}>
-            <div className="mono" style={{ fontSize: "11px", color: "#8A8578", letterSpacing: "1px", marginBottom: "10px" }}>WIE BETAALT WAT</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-              {sortedPeople.map((p) => (
-                <div key={p} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "9px 12px", borderRadius: "8px", background: totals[p] > 0 ? "#FFFFFF" : "transparent", boxShadow: totals[p] > 0 ? "inset 0 0 0 1px #E4E0D3" : "none" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                    <span style={{ width: "8px", height: "8px", borderRadius: "50%", background: COLORS[p], display: "inline-block" }} />
-                    <span style={{ fontSize: "13.5px", fontWeight: 600, color: "#21231F" }}>{p}</span>
+          <div style=${{ padding: "16px" }}>
+            <div class="mono" style=${{ fontSize: "11px", color: "#8A8578", letterSpacing: "1px", marginBottom: "10px" }}>WIE BETAALT WAT</div>
+            <div style=${{ display: "flex", flexDirection: "column", gap: "6px" }}>
+              ${sortedPeople.map((p) => html`
+                <div key=${p} style=${{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "9px 12px", borderRadius: "8px", background: totals[p] > 0 ? "#FFFFFF" : "transparent", boxShadow: totals[p] > 0 ? "inset 0 0 0 1px #E4E0D3" : "none" }}>
+                  <div style=${{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <span style=${{ width: "8px", height: "8px", borderRadius: "50%", background: COLORS[p], display: "inline-block" }}></span>
+                    <span style=${{ fontSize: "13.5px", fontWeight: 600, color: "#21231F" }}>${p}</span>
                   </div>
-                  <span className="mono" style={{ fontSize: "14px", fontWeight: 700, color: "#21231F" }}>{fmt(totals[p])}</span>
+                  <span class="mono" style=${{ fontSize: "14px", fontWeight: 700, color: "#21231F" }}>${fmt(totals[p])}</span>
                 </div>
-              ))}
-              {unassigned > 0.004 && (
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "9px 12px", marginTop: "4px" }}>
-                  <span className="mono" style={{ fontSize: "12px", color: "#C2452D" }}>Nog niet toegewezen</span>
-                  <span className="mono" style={{ fontSize: "13px", fontWeight: 700, color: "#C2452D" }}>{fmt(unassigned)}</span>
+              `)}
+              ${unassigned > 0.004 ? html`
+                <div style=${{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "9px 12px", marginTop: "4px" }}>
+                  <span class="mono" style=${{ fontSize: "12px", color: "#C2452D" }}>Nog niet toegewezen</span>
+                  <span class="mono" style=${{ fontSize: "13px", fontWeight: 700, color: "#C2452D" }}>${fmt(unassigned)}</span>
                 </div>
-              )}
+              ` : null}
             </div>
-            <div style={{ display: "flex", justifyContent: "space-between", marginTop: "14px", paddingTop: "12px", borderTop: "1px solid #21231F" }}>
-              <span style={{ fontSize: "13px", fontWeight: 700 }}>Algemeen Totaal</span>
-              <span className="mono" style={{ fontSize: "15px", fontWeight: 800 }}>{fmt(GRAND_TOTAL)}</span>
+            <div style=${{ display: "flex", justifyContent: "space-between", marginTop: "14px", paddingTop: "12px", borderTop: "1px solid #21231F" }}>
+              <span style=${{ fontSize: "13px", fontWeight: 700 }}>Algemeen Totaal</span>
+              <span class="mono" style=${{ fontSize: "15px", fontWeight: 800 }}>${fmt(GRAND_TOTAL)}</span>
             </div>
           </div>
 
-          <div style={{ padding: "0 16px 20px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span className="mono" style={{ fontSize: "10.5px", color: savingState === "idle" ? "transparent" : "#8A8578" }}>
-              {savingState === "saving" ? "opslaan…" : savingState === "saved" ? "✓ opgeslagen" : ""}
+          <div style=${{ padding: "0 16px 20px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span class="mono" style=${{ fontSize: "10.5px", color: savingState === "idle" ? "transparent" : "#8A8578" }}>
+              ${savingState === "saving" ? "opslaan…" : savingState === "saved" ? "✓ opgeslagen" : ""}
             </span>
-            {!confirmReset ? (
-              <button onClick={() => setConfirmReset(true)} className="mono" style={{ fontSize: "11px", color: "#8A8578", background: "none", border: "none", cursor: "pointer", padding: "4px" }}>↺ alles wissen</button>
-            ) : (
-              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                <span className="mono" style={{ fontSize: "11px", color: "#C2452D" }}>Zeker?</span>
-                <button onClick={resetAll} className="mono" style={{ fontSize: "11px", fontWeight: 700, color: "#C2452D", background: "none", border: "none", cursor: "pointer" }}>Ja, wis</button>
-                <button onClick={() => setConfirmReset(false)} style={{ background: "none", border: "none", cursor: "pointer", color: "#8A8578" }}>✕</button>
+            ${!confirmReset ? html`
+              <button onClick=${() => setConfirmReset(true)} class="mono" style=${{ fontSize: "11px", color: "#8A8578", background: "none", border: "none", cursor: "pointer", padding: "4px" }}>↺ alles wissen</button>
+            ` : html`
+              <div style=${{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <span class="mono" style=${{ fontSize: "11px", color: "#C2452D" }}>Zeker?</span>
+                <button onClick=${resetAll} class="mono" style=${{ fontSize: "11px", fontWeight: 700, color: "#C2452D", background: "none", border: "none", cursor: "pointer" }}>Ja, wis</button>
+                <button onClick=${() => setConfirmReset(false)} style=${{ background: "none", border: "none", cursor: "pointer", color: "#8A8578" }}>✕</button>
               </div>
-            )}
+            `}
           </div>
         </div>
-        <div className="zigzag-bottom" />
-        <p style={{ textAlign: "center", color: "#8A8578", fontSize: "11px", marginTop: "16px" }} className="mono">
+        <div class="zigzag-bottom"></div>
+        <p style=${{ textAlign: "center", color: "#8A8578", fontSize: "11px", marginTop: "16px" }} class="mono">
           Prijzen zijn incl. BTW. Keuzes worden live gedeeld via Supabase.
         </p>
       </div>
     </div>
-  );
+  `;
 }
 
-ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+try {
+  createRoot(document.getElementById("root")).render(React.createElement(App));
+} catch (e) {
+  document.getElementById("root").innerHTML = '<div id="status">Er ging iets mis bij het opstarten: ' + String(e.message || e) + '</div>';
+}
 </script>
 </body>
 </html>
